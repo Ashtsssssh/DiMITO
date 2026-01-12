@@ -1,0 +1,17 @@
+{
+    "camera_id": "CC_01",
+    "vehicle_counts": {
+        "car": 0,
+        "bike": 0,
+        "truck": 0,
+        "total": 14
+    },
+    "queue_length_m": 24.5,
+    "density": 0.14,
+    "pressure": 0.35,
+    "road_dimensions": {
+        "length_m": 50.0,
+        "width_m": 10.0,
+        "area_m2": 500.0
+    }
+}

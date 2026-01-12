@@ -1,0 +1,42 @@
+
+
+all da routes + functionality
+
+cookie checking to verify the node 
+
+POST-ROUTES {
+
+ADMIN - ADD_NODE, ADD_EDGE
+
+UPDATE_TRAFFIC_STATE: [ jus uploads a photo and that photo is sent to the N1T2 route to give analytics that enter in DB ]
+
+}
+
+GET-ROUTES{
+
+GET_TRAFFIC_FOR_NODE
+
+GET_GREEN_TIME
+
+M2
+GET_TRAFFIC_FOR_NEIGHBORS
+...
+}
+
+
+
+
+//CURRENT TOPOLOGY
+
+
+N1 - E1 , E6
+
+N2 - E1 , E2 , E3 , E4
+
+N3 - E2 , E5 , E6
+
+N4 - E3
+
+N5 - E4 , E5
+
+
