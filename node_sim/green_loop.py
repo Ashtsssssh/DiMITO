@@ -2,7 +2,7 @@ import time
 import requests
 from config import BASE_URL, RECOMPUTE_BEFORE
 
-
+# sdfgfdsdf
 class GreenManager:
     def __init__(self, node_id, edge_images):
         self.node_id = node_id
