@@ -11,6 +11,8 @@ def run_ml_for_edge(image_file, camera_id, save_vis):
     - Passes file path to ML
     - Cleans up automatically
     """
+    print("ML INPUT:", image_file.name, image_file.size)
+
 
     # Create a temp file
     suffix = os.path.splitext(image_file.name)[1] or ".jpg"

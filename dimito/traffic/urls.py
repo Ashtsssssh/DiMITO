@@ -21,8 +21,8 @@ urlpatterns = [
     # AUTOCALL IN FUTURE DV
     path("routing/dv-update-test/", dv_update_test),
     
-    # Testing & Debug (keep these - they're useful!)
-    path("test/create-network/", create_test_network),
-    path("test/verify/", verify_routing),
+    # # Testing & Debug (keep these - they're useful!)
+    # path("test/create-network/", create_test_network),
+    # path("test/verify/", verify_routing),
   
 ]
