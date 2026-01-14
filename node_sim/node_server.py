@@ -106,7 +106,7 @@ class NodeServer:
         s.bind((NODE_HOST, NODE_PORT))
         s.listen(10)
 
-        print(f"🚦 Node {NODE_ID} listening on {NODE_HOST}:{NODE_PORT}")
+        print(f"🚦 Node {NODE_ID} on {NODE_HOST}:{NODE_PORT}")
 
         while True:
             conn, addr = s.accept()

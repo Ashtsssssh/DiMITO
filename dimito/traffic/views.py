@@ -19,6 +19,12 @@ from rest_framework.response import Response
 from traffic.db.models import RoutingEntry
 
 from datetime import datetime
+import time
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from .db.models import Node,Edge
+from .services.green_time import compute_green_times
+
 
 ALPHA = 0.2
 MAX_INFLATION = 1.5
@@ -229,6 +235,109 @@ def update_traffic(request, edge_id, node_id):
         "updated_for_node": node_id
     })
 
+
+@api_view(["GET"])
+def get_signal_state(request, node_id):
+    """
+    Returns current signal state for a node
+    """
+
+    now = int(time.time())
+
+    # edges controlled by this node
+    edges = list(Edge.objects(out_node_id=node_id, is_active=True))
+
+    if not edges:
+        return Response(
+            {"error": f"No outgoing edges for node {node_id}"},
+            status=404
+        )
+
+    # find current green edge = most recent last_green_ts
+    current_edge = max(
+        edges,
+        key=lambda e: e.outgoing_traffic.get("last_green_ts", 0)
+    )
+
+    last_green_ts = current_edge.outgoing_traffic.get("last_green_ts", 0)
+
+    # recompute phases using current DB state
+    states = []
+    for e in edges:
+        st = e.outgoing_traffic.copy()
+        st["edge_id"] = e.edge_id
+        states.append(st)
+
+    green_times = compute_green_times(states)
+
+    remaining = max(
+        0,
+        int(last_green_ts + green_times.get(current_edge.edge_id, 0) - now)
+    )
+
+    return Response({
+        "node_id": node_id,
+        "current_green": current_edge.edge_id,
+        "remaining_time": remaining,
+        "phases": [
+            {"edge": e, "green": t}
+            for e, t in green_times.items()
+        ],
+        "server_time": now
+    })
+
+@api_view(["GET"])
+def get_snapshot(request):
+    """
+    Returns full system snapshot for dashboard / debugging
+    """
+
+    now = int(time.time())
+
+    nodes = list(Node.objects(is_active=True))
+    edges = list(Edge.objects(is_active=True))
+
+    snapshot = {
+        "timestamp": now,
+        "nodes": [],
+        "edges": [],
+        "signals": {},
+        "routing": {}
+    }
+
+    # nodes
+    for n in nodes:
+        snapshot["nodes"].append({
+            "node_id": n.node_id,
+            "name": n.name,
+            "location": n.location
+        })
+
+    # edges
+    for e in edges:
+        snapshot["edges"].append({
+            "edge_id": e.edge_id,
+            "from": e.in_node_id,
+            "to": e.out_node_id,
+            "traffic": e.outgoing_traffic
+        })
+
+    # per-node signal + routing
+    for n in nodes:
+        try:
+            # signal state
+            r = get_signal_state(request, n.node_id).data
+            snapshot["signals"][n.node_id] = r
+
+            # routing table
+            rt = build_routing_table_for_node(n.node_id)
+            snapshot["routing"][n.node_id] = rt
+
+        except Exception as e:
+            snapshot["signals"][n.node_id] = {"error": str(e)}
+            snapshot["routing"][n.node_id] = {}
+
+    return Response(snapshot)
 
 # -----------------------------
 # FIND ROUTING TABLE FOR A NODE

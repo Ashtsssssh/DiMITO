@@ -2,7 +2,7 @@ from django.urls import path
 from .views import (
     calculate_green, add_node, add_edge, update_traffic,
     get_table, dv_update_test,
-    create_test_network, verify_routing, add_routing_entry_view
+    create_test_network, verify_routing, add_routing_entry_view,get_signal_state,get_snapshot
 )
 
 urlpatterns = [
@@ -10,6 +10,9 @@ urlpatterns = [
     # CLIENT == NODE 
     path("green/<str:node_id>/", calculate_green),
     path("gettable/node/<str:node_id>/", get_table),
+    path("signal/<str:node_id>/", get_signal_state),
+    path("snapshot/", get_snapshot),
+
 
     path("add_routing_entry/", add_routing_entry_view),
     
