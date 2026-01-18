@@ -149,7 +149,10 @@ def add_routing_entry_view(request):
     })
 
 
-# NODE CREATION
+
+
+
+# NODE 
 @api_view(["POST"])
 def add_node(request):
     data = request.data
@@ -171,6 +174,75 @@ def add_node(request):
         "node_id": node.node_id,
         "name": node.name
     })
+
+@api_view(["POST"])
+def del_node(request):
+    data = request.data
+
+    if not data.get("node_id"):
+        return Response(
+            {"error": "node_id is required"},
+            status=400
+        )
+
+    ok = add_data.delete_node(data["node_id"])
+
+    if not ok:
+        return Response(
+            {"error": "Node not found"},
+            status=404
+        )
+
+    return Response({
+        "message": f"Node {data['node_id']} deleted successfully"
+    })
+
+@api_view(["POST"])
+def edit_node(request):
+    data = request.data
+
+    if not data.get("node_id"):
+        return Response(
+            {"error": "node_id is required"},
+            status=400
+        )
+
+    node = add_data.update_node(
+        node_id=data["node_id"],
+        name=data.get("name"),
+        location=data.get("location"),
+        is_active=data.get("is_active")
+    )
+
+    if not node:
+        return Response(
+            {"error": "Node not found"},
+            status=404
+        )
+
+    return Response({
+        "node_id": node.node_id,
+        "name": node.name,
+        "location": node.location,
+        "is_active": node.is_active
+    })
+
+@api_view(["GET"])
+def get_all_nodes(request):
+    nodes = add_data.get_all_nodes()
+
+    return Response([
+        {
+            "node_id": n.node_id,
+            "name": n.name,
+            "location": n.location,
+            "is_active": n.is_active
+        }
+        for n in nodes
+    ])
+
+
+
 
 @api_view(["POST"])
 def add_edge(request):
@@ -204,6 +276,88 @@ def add_edge(request):
         "in": edge.in_node_id,
         "out": edge.out_node_id
     })
+
+@api_view(["POST"])
+def del_edge(request):
+
+    data = request.data
+    if not data.get("edge_id"):
+        return Response(
+            {"error": "node_id is required"},
+            status=400
+        )
+
+    ok = add_data.delete_edge(data["edge_id"])
+
+    if not ok:
+        return Response(
+            {"error": "Node not found"},
+            status=404
+        )
+
+    return Response({
+        "message": f"Edge {data['edge_id']} deleted successfully"
+    })
+
+@api_view(["POST"])
+def edit_node(request):
+    data = request.data
+
+    if not data.get("node_id"):
+        return Response(
+            {"error": "node_id is required"},
+            status=400
+        )
+
+    node = add_data.update_edge(
+        edge_id=data["edge_id"],
+        name=data.get("name"),
+        in_node_id=data.get("in_node_id"),
+        out_node_id=data.get("out_node_id"),
+        camera_id=data.get("camera_id"),
+        road_length_m=float(data.get("road_length_m", 0)),
+        road_width_m=float(data.get("road_width_m", 0)),
+        is_active=data.get("is_active")
+    )
+
+    if not node:
+        return Response(
+            {"error": "Node not found"},
+            status=404
+        )
+
+    return Response({
+        "edge_id": node.edge_id,
+        "name": node.name,
+        "in_node_id": node.in_node_id,
+        "out_node_id": node.out_node_id,
+        "camera_id": node.camera_id,
+        "road_length_m": node.road_length_m,
+        "road_width_m": node.road_width_m,
+        "is_active": node.is_active
+    })
+
+@api_view(["GET"])
+def get_all_edges(request):
+    edges = add_data.get_all_edges()
+
+    return Response([
+        {
+            "edge_id": n.edge_id,
+            "name": n.name,
+            "in_node_id": n.in_node_id,
+            "out_node_id": n.out_node_id,
+            "camera_id": n.camera_id,
+            "road_length_m": n.road_length_m,
+            "road_width_m": n.road_width_m,
+            "is_active": n.is_active
+        }
+        for n in edges
+    ])
+
+
+
+
 
 
 # TRAFFIC UPDATE

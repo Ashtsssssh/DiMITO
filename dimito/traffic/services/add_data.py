@@ -36,6 +36,41 @@ def add_node(node_id: str, name: str, location: dict = None, is_active: bool = T
 	node.save()
 	return node
 
+def delete_node(node_id: str) -> bool:
+    node = Node.objects(node_id=node_id).first()
+    if not node:
+        return False
+
+    node.delete()
+    return True
+
+def update_node(
+    node_id: str,
+    name: str = None,
+    location: dict = None,
+    is_active: bool = None
+):
+    node = Node.objects(node_id=node_id).first()
+    if not node:
+        return None
+
+    if name is not None:
+        node.name = name
+
+    if location is not None:
+        node.location = location
+
+    if is_active is not None:
+        node.is_active = is_active
+
+    node.updated_at = datetime.now()
+    node.save()
+    return node
+
+def get_all_nodes():
+    return list(Node.objects.all())
+
+
 
 def add_edge(edge_id: str, name: str, in_node_id: str, out_node_id: str,
 			 camera_id: str, road_length_m: float, road_width_m: float,
@@ -58,6 +93,69 @@ def add_edge(edge_id: str, name: str, in_node_id: str, out_node_id: str,
 	edge.save()
 	return edge
 
+def delete_edge(edge_id: str) -> bool:
+    """Delete an Edge by its ID.
+    
+    Returns:
+        True if deleted, False if not found.
+    """
+    edge = Edge.objects(edge_id=edge_id).first()
+    if not edge:
+        return False
+
+    edge.delete()
+    return True
+
+def update_edge(
+    edge_id: str,
+    name: str = None,
+    in_node_id: str = None,
+    out_node_id: str = None,
+    camera_id: str = None,
+    road_length_m: float = None,
+    road_width_m: float = None,
+    is_active: bool = None
+):
+    """Update an existing Edge. Only provided fields are updated.
+    
+    Returns:
+        The updated `Edge` document, or None if not found.
+    """
+    edge = Edge.objects(edge_id=edge_id).first()
+    if not edge:
+        return None
+
+    if name is not None:
+        edge.name = name
+
+    if in_node_id is not None:
+        edge.in_node_id = in_node_id
+        
+    if out_node_id is not None:
+        edge.out_node_id = out_node_id
+
+    if camera_id is not None:
+        edge.camera_id = camera_id
+
+    if road_length_m is not None:
+        edge.road_length_m = road_length_m
+        
+    if road_width_m is not None:
+        edge.road_width_m = road_width_m
+
+    if is_active is not None:
+        edge.is_active = is_active
+
+    # Assuming Edge model has an updated_at field like Node
+    edge.updated_at = datetime.now()
+    edge.save()
+    return edge
+
+def get_all_edges():
+    """Retrieve all Edge documents."""
+    return list(Edge.objects.all())
+
+
 
 def get_edges_for_node(node_id: str):
 	"""Return all edges connected to `node_id` (incoming and outgoing)."""
@@ -67,6 +165,7 @@ def get_edges_for_node(node_id: str):
 		"incoming": incoming,
 		"outgoing": outgoing
 	}
+
 
 
 def _apply_traffic_update(edge, field: str, updates: dict):
