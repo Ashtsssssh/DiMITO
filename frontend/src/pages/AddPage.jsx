@@ -11,15 +11,22 @@ export default function AddPage({
   clearCoordinates, 
   onNodesUpdate,
   selectedEdgeNodes,
-  onEdgeNodeSelect
+  onEdgeNodeSelect,
+  selectEdgeMode,
+  selectedEdge,
+  onSelectEdgeMode,
+  clearEdgeNodes
 }) {
   const [activeForm, setActiveForm] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [nodes, setNodes] = useState([]);
+  const [edges, setEdges] = useState([]);
+  const [trafficMsg, setTrafficMsg] = useState(null);
 
   useEffect(() => {
     fetchNodes();
+    fetchEdges();
   }, []);
 
   useEffect(() => {
@@ -27,6 +34,11 @@ export default function AddPage({
       fetchNodes();
     }
   }, [selectedNode]);
+
+  useEffect(() => {
+    console.log('[AddPage] selectEdgeMode changed:', selectEdgeMode);
+    console.log('[AddPage] selectedEdgeNodes:', selectedEdgeNodes);
+  }, [selectEdgeMode, selectedEdgeNodes]);
 
   const fetchNodes = async () => {
     try {
@@ -37,13 +49,31 @@ export default function AddPage({
     }
   };
 
+  const fetchEdges = async () => {
+    try {
+      const data = await edgeAPI.getAll();
+      setEdges(data);
+    } catch (err) {
+      console.error('Failed to fetch edges:', err);
+    }
+  };
+
+  // Find edge between two selected nodes (bidirectional)
+  function findEdgeBetweenNodes(nodeA, nodeB) {
+    if (!nodeA || !nodeB) return null;
+    return edges.find(
+      (e) =>
+        (e.in_node_id === nodeA.node_id && e.out_node_id === nodeB.node_id) ||
+        (e.in_node_id === nodeB.node_id && e.out_node_id === nodeA.node_id)
+    );
+  }
+
   const handleFormSubmit = async (data) => {
     setLoading(true);
     setError(null);
 
     try {
       let result;
-
       if (activeForm.apiType === 'node/add') {
         result = await nodeAPI.add({
           node_id: `node_${Date.now()}`,
@@ -93,6 +123,42 @@ export default function AddPage({
 
         console.log('Created edges:', result);
       }
+      else if (activeForm.apiType === 'edge/edit') {
+        // Use two selected nodes to find the edge
+        const node1 = selectedEdgeNodes[0];
+        const node2 = selectedEdgeNodes[1];
+        const edge = findEdgeBetweenNodes(node1, node2);
+        if (!edge) throw new Error('No edge exists between selected nodes');
+        
+        // Calculate road width from lanes
+        const roadWidth = parseFloat(data.lanes) * 3.5;
+        
+        result = await edgeAPI.edit({
+          edge_id: edge.edge_id,
+          name: data.name,
+          in_node_id: edge.in_node_id,
+          out_node_id: edge.out_node_id,
+          camera_id: data.camera_id || edge.camera_id,
+          road_length_m: edge.road_length_m,
+          road_width_m: roadWidth,
+          is_active: data.is_active === 'true',
+        });
+      }
+      else if (activeForm.apiType === 'edge/del') {
+        // Use two selected nodes to find the edge
+        const node1 = selectedEdgeNodes[0];
+        const node2 = selectedEdgeNodes[1];
+        const edge = findEdgeBetweenNodes(node1, node2);
+        if (!edge) throw new Error('No edge exists between selected nodes');
+        
+        // Delete both directional edges
+        const edge_forward = `e_${edge.in_node_id}_${edge.out_node_id}`;
+        const edge_reverse = `e_${edge.out_node_id}_${edge.in_node_id}`;
+        
+        await edgeAPI.delete(edge_forward);
+        await edgeAPI.delete(edge_reverse);
+        result = { message: 'Both edges deleted successfully' };
+      }
       else if (activeForm.apiType === 'camera/add') {
         result = await cameraAPI.add({
           camera_id: data.cameraId,
@@ -115,12 +181,15 @@ export default function AddPage({
       
       setActiveForm(null);
       clearCoordinates();
+      clearEdgeNodes?.();
+      onSelectEdgeMode?.(false);
       
       if (onNodesUpdate) {
         onNodesUpdate();
       }
       
       fetchNodes();
+      fetchEdges();
     } catch (err) {
       console.error('Error:', err);
       setError(err.message);
@@ -134,6 +203,138 @@ export default function AddPage({
     setActiveForm(null);
     setError(null);
     clearCoordinates();
+    clearEdgeNodes?.();
+    onSelectEdgeMode?.(false);
+  };
+
+  const handleGenerateTraffic = async () => {
+    setLoading(true);
+    setTrafficMsg(null);
+    
+    try {
+      const res = await fetch("http://localhost:8000/api/edge/update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        }
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        setTrafficMsg({
+          type: 'success',
+          text: `✅ Updated ${data.updated || 0} edges with realistic traffic data`
+        });
+        // Refresh edges after updating traffic
+        setTimeout(() => {
+          fetchEdges();
+        }, 500);
+      } else {
+        setTrafficMsg({
+          type: 'error',
+          text: `❌ Error: ${data.message || 'Failed to generate traffic'}`
+        });
+      }
+    } catch (err) {
+      console.error("Traffic generation failed", err);
+      setTrafficMsg({
+        type: 'error',
+        text: `❌ Failed: ${err.message}`
+      });
+    } finally {
+      setLoading(false);
+      setTimeout(() => setTrafficMsg(null), 4000);
+    }
+  };
+
+  const handleDVUpdate = async () => {
+    setLoading(true);
+    setTrafficMsg(null);
+    
+    try {
+      const res = await fetch("http://localhost:8000/api/dv_update_test/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        }
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        setTrafficMsg({
+          type: 'success',
+          text: `✅ Routing computed! ${data.updates_applied || 0} routing entries updated`
+        });
+        // Routing is now available for nodes
+        setTimeout(() => {
+          fetchEdges();
+        }, 500);
+      } else {
+        setTrafficMsg({
+          type: 'error',
+          text: `❌ Error: ${data.message || 'Failed to compute routing'}`
+        });
+      }
+    } catch (err) {
+      console.error("DV update failed", err);
+      setTrafficMsg({
+        type: 'error',
+        text: `❌ Failed: ${err.message}`
+      });
+    } finally {
+      setLoading(false);
+      setTimeout(() => setTrafficMsg(null), 4000);
+    }
+  };
+
+  const handleClearDatabase = async () => {
+    // Ask for confirmation before clearing
+    if (!window.confirm('⚠️ WARNING: This will DELETE ALL data (nodes, edges, routing).\n\nThis action CANNOT be undone. Are you sure?')) {
+      return;
+    }
+
+    setLoading(true);
+    setTrafficMsg(null);
+    
+    try {
+      const res = await fetch("http://localhost:8000/api/db/clear-all/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        }
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        setTrafficMsg({
+          type: 'success',
+          text: `✅ Database cleared! Deleted ${data.deleted.nodes} nodes, ${data.deleted.edges} edges`
+        });
+        // Refresh data after clearing
+        setTimeout(() => {
+          fetchNodes();
+          fetchEdges();
+          onNodesUpdate?.([]);
+        }, 500);
+      } else {
+        setTrafficMsg({
+          type: 'error',
+          text: `❌ Error: ${data.message || 'Failed to clear database'}`
+        });
+      }
+    } catch (err) {
+      console.error("Database clear failed", err);
+      setTrafficMsg({
+        type: 'error',
+        text: `❌ Failed: ${err.message}`
+      });
+    } finally {
+      setLoading(false);
+      setTimeout(() => setTrafficMsg(null), 5000);
+    }
   };
 
   const dropdownConfigs = [
@@ -219,6 +420,44 @@ export default function AddPage({
               { name: 'camera_id', label: 'Camera ID (optional)', type: 'text', placeholder: 'Leave empty if none' }
             ]
           }
+        },
+        {
+          label: "Edit",
+          description: "Edit an existing edge",
+          formConfig: {
+            title: "Edit Edge",
+            submitLabel: "Update Edge",
+            apiType: 'edge/edit',
+            requiresEdgeNodeSelect: true,
+            fields: [
+              { name: 'name', label: 'Road Name', type: 'text', required: true, placeholder: 'Update name' },
+              { name: 'lanes', label: 'Number of Lanes', type: 'number', required: true, placeholder: '2', min: 1 },
+              { name: 'camera_id', label: 'Camera ID (optional)', type: 'text', placeholder: 'Update camera' },
+              { 
+                name: 'is_active', 
+                label: 'Status', 
+                type: 'select',
+                required: true,
+                options: [
+                  { value: 'true', label: 'Active' },
+                  { value: 'false', label: 'Inactive' }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          label: "Delete",
+          description: "Remove an edge",
+          formConfig: {
+            title: "Delete Edge",
+            submitLabel: "Delete Edge",
+            apiType: 'edge/del',
+            requiresEdgeNodeSelect: true,
+            fields: [
+              { name: 'reason', label: 'Reason (optional)', type: 'textarea', placeholder: 'Why are you deleting this edge?' }
+            ]
+          }
         }
       ]
     },
@@ -265,20 +504,73 @@ export default function AddPage({
           }
         }
       ]
+    },
+    {
+      title: "Traffic & Routing",
+      icon: "🚗",
+      color: "from-amber-600 to-orange-600",
+      items: [
+        {
+          label: "Generate Test Data",
+          description: "Fill all edges with realistic traffic",
+          isSpecial: true,
+          action: 'generateTraffic'
+        },
+        {
+          label: "Compute Routing (DV)",
+          description: "Calculate optimal routes using Distance Vector",
+          isSpecial: true,
+          action: 'dvUpdate'
+        }
+      ]
+    },
+    {
+      title: "Database",
+      icon: "🗑️",
+      color: "from-red-600 to-pink-600",
+      items: [
+        {
+          label: "Clear All Data",
+          description: "Delete all nodes, edges, and routing data",
+          isSpecial: true,
+          action: 'clearDatabase',
+          dangerous: true
+        }
+      ]
     }
   ];
 
   const handleItemClick = (item) => {
+    // Handle special actions
+    if (item.isSpecial && item.action === 'generateTraffic') {
+      handleGenerateTraffic();
+      return;
+    }
+    
+    if (item.isSpecial && item.action === 'dvUpdate') {
+      handleDVUpdate();
+      return;
+    }
+    
+    if (item.isSpecial && item.action === 'clearDatabase') {
+      handleClearDatabase();
+      return;
+    }
+
     const formConfig = { ...item.formConfig };
     
     setActiveForm(formConfig);
     
     if (formConfig.requiresMapClick && !formConfig.requiresNodeSelect) {
-      onMapClick();
+      console.log('[AddPage] Enabling map click mode for node addition');
+      onMapClick();  // Enable map clicking
     } else if (formConfig.requiresNodeSelect) {
       onNodeSelect(formConfig.selectMode || 'edit');
     } else if (formConfig.requiresEdgeNodeSelect) {
-      onEdgeNodeSelect();
+      console.log('[AddPage] Enabling edge select mode via onSelectEdgeMode');
+      onSelectEdgeMode(true);
+    } else if (formConfig.requiresEdgeSelect) {
+      onSelectEdgeMode(formConfig.selectMode || 'edit');
     }
   };
 
@@ -290,8 +582,44 @@ export default function AddPage({
           <p className="text-gray-400 text-sm mt-1">Add, edit, or delete components</p>
         </div>
 
+        {trafficMsg && (
+          <div className={`mb-4 p-4 rounded-lg border ${
+            trafficMsg.type === 'success' 
+              ? 'bg-green-900/50 border-green-700' 
+              : 'bg-red-900/50 border-red-700'
+          }`}>
+            <p className={`text-sm font-medium ${
+              trafficMsg.type === 'success' ? 'text-green-200' : 'text-red-200'
+            }`}>
+              {trafficMsg.text}
+            </p>
+          </div>
+        )}
+
         {activeForm ? (
           <>
+            {/* Edge Selection Indicator */}
+            {activeForm.requiresEdgeSelect && !selectedEdge && (
+              <div className="mb-4 p-4 bg-cyan-900/50 border border-cyan-700 rounded-lg">
+                <p className="text-cyan-200 text-sm font-medium">
+                  {activeForm.selectMode === 'delete' ? '🗑️' : '✏️'} Click on an edge on the map to select it
+                </p>
+              </div>
+            )}
+            
+            {/* Selected Edge Info */}
+            {selectedEdge && (
+              <div className="mb-4 p-4 bg-green-900/50 border border-green-700 rounded-lg">
+                <p className="text-green-200 text-sm font-medium">✓ Selected: {selectedEdge.name}</p>
+                <p className="text-green-300 text-xs mt-1">
+                  ID: {selectedEdge.edge_id}
+                </p>
+                <p className="text-green-300 text-xs">
+                  Direction: {selectedEdge.in_node_id} → {selectedEdge.out_node_id}
+                </p>
+              </div>
+            )}
+            
             {/* Edge Node Selection Indicator */}
             {activeForm.requiresEdgeNodeSelect && (
               <div className="mb-4 p-4 bg-blue-900/50 border border-blue-700 rounded-lg">
@@ -358,6 +686,7 @@ export default function AddPage({
               selectedCoordinates={selectedCoordinates}
               selectedNode={selectedNode}
               selectedEdgeNodes={selectedEdgeNodes}
+              selectedEdge={selectedEdge}
             />
           </>
         ) : (

@@ -6,7 +6,8 @@ export default function FormRenderer({
   error, 
   selectedCoordinates,
   selectedNode,
-  selectedEdgeNodes
+  selectedEdgeNodes,
+  selectedEdge
 }) {
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -57,6 +58,16 @@ export default function FormRenderer({
             value = selectedNode.name;
           } else if (field.name === 'is_active' && selectedNode && formConfig.apiType === 'node/edit') {
             value = selectedNode.is_active ? 'true' : 'false';
+          } else if (field.name === 'name' && selectedEdge && formConfig.apiType === 'edge/edit') {
+            value = selectedEdge.name;
+          } else if (field.name === 'road_length_m' && selectedEdge && formConfig.apiType === 'edge/edit') {
+            value = selectedEdge.road_length_m;
+          } else if (field.name === 'road_width_m' && selectedEdge && formConfig.apiType === 'edge/edit') {
+            value = selectedEdge.road_width_m;
+          } else if (field.name === 'camera_id' && selectedEdge && formConfig.apiType === 'edge/edit') {
+            value = selectedEdge.camera_id;
+          } else if (field.name === 'is_active' && selectedEdge && formConfig.apiType === 'edge/edit') {
+            value = selectedEdge.is_active ? 'true' : 'false';
           }
 
           return (

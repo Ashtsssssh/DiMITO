@@ -86,6 +86,25 @@ export const edgeAPI = {
     });
   },
 
+  edit: async (edgeData) => {
+    return apiCall('/edge/edit', 'POST', {
+      edge_id: edgeData.edge_id,
+      name: edgeData.name,
+      in_node_id: edgeData.in_node_id,
+      out_node_id: edgeData.out_node_id,
+      camera_id: edgeData.camera_id || '',
+      road_length_m: parseFloat(edgeData.road_length_m),
+      road_width_m: parseFloat(edgeData.road_width_m),
+      is_active: edgeData.is_active ?? true
+    });
+  },
+
+  delete: async (edgeId) => {
+    return apiCall('/edge/del', 'POST', {
+      edge_id: edgeId
+    });
+  },
+
   addBidirectional: async (node1Id, node2Id, edgeData) => {
     const edge1 = await edgeAPI.add({
       edge_id: `e_${node1Id}_${node2Id}`,
@@ -129,6 +148,16 @@ export const cameraAPI = {
       settings: cameraData.settings || {},
       is_active: cameraData.is_active ?? true
     });
+  }
+};
+
+// ============================================================================
+// ROUTING APIs
+// ============================================================================
+
+export const routingAPI = {
+  getRoutingTable: async (nodeId) => {
+    return apiCall(`/gettable/node/${nodeId}/`, 'GET');
   }
 };
 
