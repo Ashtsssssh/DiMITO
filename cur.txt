@@ -1,6 +1,0 @@
-understand now firstly help me run the car_sim to request from node_server the next hop when i give my final node,
-and the next part understand that if a node has 4 red lights ,
-then at an instance ask for green of this edge E21 then i get the whole table but will use only that oe green time,
-similarly after the said time that server returns passes by (10 sec before)
-i ask for green time of next edge i get 4 use 1 as we just did then print a lil green N1 red N2 so that i can track it ok ?
-( in future we replace this with leds or actual red_green code for real traffic signals) 
