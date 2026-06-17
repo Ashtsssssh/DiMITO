@@ -1,0 +1,313 @@
+# DiMITO Admin Dashboard – Frontend Feature Plan
+
+This document serves as the **single source of truth** for all planned frontend features of the DiMITO Admin Dashboard. It is meant to be tracked, iterated, and implemented step‑by‑step.
+
+---
+
+## 🎯 Goal of the Dashboard
+
+The admin dashboard answers four continuous questions:
+
+1. **What is happening right now?**
+2. **Why did the system make this decision?**
+3. **What will happen next?**
+4. **How can an admin intervene, test, or analyze?**
+
+---
+
+## 🟢 1. CORE FEATURES (MVP – MUST HAVE)
+
+### 1.1 Live Intersection View
+
+**Purpose:** Real‑time visualization of a single intersection (node).
+
+**Displays:**
+
+* Node ID (e.g., N1)
+* All approaches (edges)
+* Current green edge
+* Red/green state for all approaches
+* Countdown timer for current green
+
+**Source APIs:**
+
+* `/api/signal/<node_id>/`
+
+---
+
+### 1.2 Live Traffic Metrics Per Edge
+
+**Purpose:** Observe real‑time congestion and ML output.
+
+**Per Edge Metrics:**
+
+* vehicle_count
+* queue_length_m
+* density
+* pressure
+* last_update_ts
+
+**UI Ideas:**
+
+* Bar charts for queue length
+* Color intensity for pressure
+* Tooltip for raw values
+
+**Source APIs:**
+
+* `/api/snapshot/`
+
+---
+
+### 1.3 Explainability Panel – “Why This Green?”
+
+**Purpose:** Build admin trust in DiMITO decisions.
+
+**Shows for current green edge:**
+
+* Queue length
+* Pressure
+* Waiting time (derived from last_green_ts)
+* Optional computed weight
+
+**Example Explanation:**
+
+```
+E21 chosen because:
+• Queue: 33.2m
+• Pressure: 0.47
+• Last green: 92s ago
+```
+
+---
+
+### 1.4 Routing Table Viewer
+
+**Purpose:** Observe routing intelligence per node.
+
+**Displays:**
+
+* Destination node
+* Possible next hops
+* Probabilities
+
+**Example:**
+
+```
+Destination N4:
+  → via N2 (91.5%)
+  → via N3 (8.5%)
+```
+
+**Source APIs:**
+
+* `/api/gettable/node/<node_id>/`
+
+---
+
+## 🟡 2. OPERATIONAL CONTROLS (DOABLE + HIGH VALUE)
+
+### 2.1 Green Cycle Preview
+
+**Purpose:** See what will happen in the next signal cycle.
+
+**Displays:**
+
+* Edge order
+* Green duration per edge
+
+**Example:**
+
+```
+E21 → 40s
+E31 → 14s
+E41 → 8s
+E51 → 12s
+```
+
+---
+
+### 2.2 Manual Recompute Controls
+
+**Buttons:**
+
+* Recompute green now
+* Recompute routing table
+* Run DV update once
+
+**Purpose:** Testing, demos, debugging.
+
+---
+
+### 2.3 Soft Manual Override
+
+**Purpose:** Temporary admin control without breaking automation.
+
+**Features:**
+
+* Force edge green for X seconds
+* Auto‑revert to DiMITO control
+* Visible override indicator
+
+---
+
+## 🟠 3. SYSTEM HEALTH & DEBUGGING
+
+### 3.1 ML Health Monitor
+
+**Per Camera:**
+
+* Last image timestamp
+* Inference latency
+* Vehicle count
+* Error state
+
+**Purpose:** Debug camera or ML failures quickly.
+
+---
+
+### 3.2 Live Event Log
+
+**Purpose:** System observability.
+
+**Logs:**
+
+```
+14:08:01 – Green switched to E31
+14:08:05 – Routing table refreshed
+14:08:11 – ML inference completed (E21)
+```
+
+---
+
+## 🔵 4. ANALYTICS (POST‑MVP)
+
+### 4.1 Historical Charts
+
+**Per Edge:**
+
+* Queue length vs time
+* Pressure vs time
+* Green time vs time
+
+**Per Node:**
+
+* Average waiting time
+* Fairness index
+* Starvation count
+
+---
+
+### 4.2 Baseline Comparison
+
+**Purpose:** Measure DiMITO effectiveness.
+
+**Compare:**
+
+* Fixed‑time signals
+* DiMITO adaptive signals
+
+**Metrics:**
+
+* Average wait reduction
+* Throughput improvement
+
+---
+
+## 🟣 5. INNOVATIVE / RESEARCH‑GRADE FEATURES
+
+### 5.1 What‑If Simulation Mode
+
+**Purpose:** Offline experimentation.
+
+**Inputs:**
+
+* Arrival rates
+* Weight parameters
+* Lane counts
+
+**Outputs:**
+
+* Simulated green distribution
+* Congestion evolution
+
+---
+
+### 5.2 Emergency Vehicle Injection
+
+**Feature:**
+
+* Inject emergency event on an edge
+* Immediate reprioritization
+* Logged override
+
+---
+
+### 5.3 Learning Feedback Panel
+
+**Displays:**
+
+* Predicted vs actual congestion
+* ML error over time
+* System suggestions
+
+---
+
+### 5.4 Corridor / Multi‑Node View
+
+**Purpose:** City‑scale intelligence.
+
+**Features:**
+
+* Multiple intersections
+* Green wave visualization
+* Pressure propagation
+
+---
+
+## 🧩 Recommended Frontend Stack
+
+* React + Vite
+* Mantine or MUI
+* TanStack Query
+* Recharts
+* Polling initially, WebSockets later
+
+---
+
+## 🚀 Suggested Implementation Roadmap
+
+### Sprint 1 (Foundation)
+
+1. Live intersection view
+2. Signal countdown
+3. Routing table viewer
+
+### Sprint 2 (Intelligence)
+
+4. Green preview timeline
+5. Explainability panel
+6. Event log
+
+### Sprint 3 (Control & Insight)
+
+7. Manual overrides
+8. ML health panel
+9. Analytics charts
+
+---
+
+## 🧠 Final Note
+
+This dashboard is not just UI.
+It is **how humans learn to trust autonomous traffic systems**.
+
+If an admin can always answer:
+
+> “Why did it do that?”
+
+Then DiMITO succeeds.
+
+---
+
+(Keep this document updated as features move from idea → implemented → production.)

@@ -1,0 +1,8 @@
+
+//
+//  REDO THE WEIGHTS AND 2 PARRALLELING 
+//  AND ALSO DV PHOTO IMG SE FILLS THE OTHER ONE'S traffic 
+//  
+// refactor DV
+// refactor cost computation
+// routing table boltzman calc ko acchese krna 

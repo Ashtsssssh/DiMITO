@@ -1,0 +1,19 @@
+# Core Django Framework
+Django>=5.0,<6.1
+
+# MongoDB Connectivity & ODM
+mongoengine>=0.28.2
+pymongo>=4.6.0
+
+# API Development & Frontend Integration (React support)
+djangorestframework>=3.14.0
+django-cors-headers>=4.3.0
+
+# Environment Variable & Configuration Management
+python-dotenv>=1.0.0
+
+# Utility & Image Processing (if used by models)
+Pillow>=10.2.0
+numpy
+opencv-python
+ultralytics
