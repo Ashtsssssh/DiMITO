@@ -53,16 +53,16 @@ db.sqlite3-journal
 Thumbs.db
 .windows-build-tools
 
-# Frontend (React/Node)
-frontend/node_modules/
-frontend/dist/
-frontend/build/
-frontend/.env
-frontend/.env.local
-frontend/.env.*.local
-frontend/npm-debug.log*
-frontend/yarn-debug.log*
-frontend/yarn-error.log*
+# Client (Frontend and Traffic Node Simulator)
+client/frontend/node_modules/
+client/frontend/dist/
+client/frontend/build/
+client/frontend/.env
+client/frontend/.env.local
+client/frontend/.env.*.local
+client/frontend/npm-debug.log*
+client/frontend/yarn-debug.log*
+client/frontend/yarn-error.log*
 
 # ML Models (optional - only uncomment if you want to exclude)
 # *.pt
@@ -96,7 +96,7 @@ local_settings.py
 .env
 .env.local
 # Node simulation
-node_sim/__pycache__/
+client/traffic_node/__pycache__/
 
 # Car simulation
 car_sim/__pycache__/
