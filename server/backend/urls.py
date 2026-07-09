@@ -7,6 +7,7 @@ from .views import (
     get_routing_table, trigger_dv_iteration,
     create_routing_entry, get_signal_state,
     clear_database,
+    clear_routing_table,
 )
 
 urlpatterns = [
@@ -40,4 +41,5 @@ urlpatterns = [
 
     # DATABASE MANAGEMENT
     path("db/clear-all/", clear_database),
+    path("db/clear-routing/", clear_routing_table),
 ]

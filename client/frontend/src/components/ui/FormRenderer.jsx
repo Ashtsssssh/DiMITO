@@ -1,13 +1,14 @@
-export default function FormRenderer({ 
-  formConfig, 
-  onSubmit, 
-  onCancel, 
-  loading, 
-  error, 
+export default function FormRenderer({
+  formConfig,
+  onSubmit,
+  onCancel,
+  loading,
+  error,
   selectedCoordinates,
   selectedNode,
   selectedEdgeNodes,
-  selectedEdge
+  selectedEdge,
+  resolvedEdge,   // The DB edge found via node-pair match (edge/edit flow)
 }) {
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -64,6 +65,12 @@ export default function FormRenderer({
             value = selectedEdge.road_length_m;
           } else if (field.name === 'road_width_m' && selectedEdge && formConfig.apiType === 'edge/edit') {
             value = selectedEdge.road_width_m;
+          } else if (field.name === 'lanes' && formConfig.apiType === 'edge/edit') {
+            // Prefer resolvedEdge (found via node-pair) over selectedEdge (found via direct click).
+            // resolvedEdge is the reliable source for the node-pair edge/edit flow;
+            // selectedEdge is only set when the user clicks an edge directly on the map.
+            const edgeSrc = resolvedEdge || selectedEdge;
+            if (edgeSrc) value = edgeSrc.num_lanes;
           } else if (field.name === 'camera_id' && selectedEdge && formConfig.apiType === 'edge/edit') {
             value = selectedEdge.camera_id;
           } else if (field.name === 'is_active' && selectedEdge && formConfig.apiType === 'edge/edit') {

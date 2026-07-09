@@ -1,33 +1,37 @@
 import time
 
+from backend.algo_config import cfg
+
 # ─── Green-time bounds ─────────────────────────────────────────
-MIN_GREEN = 8           # seconds — minimum green for any edge
-MAX_GREEN = 45          # seconds — maximum green for any edge
+MIN_GREEN      = cfg.GREEN_MIN_SECONDS
+MAX_GREEN      = cfg.GREEN_MAX_SECONDS
 
 # Dynamic cycle_time: scales with number of edges
-CYCLE_PER_EDGE = 30     # base seconds per edge
-MIN_CYCLE_TIME = 40     # floor (even for 1-2 edges)
-MAX_CYCLE_TIME = 180    # ceiling (many edges)
+CYCLE_PER_EDGE  = cfg.GREEN_CYCLE_PER_EDGE
+MIN_CYCLE_TIME  = cfg.GREEN_MIN_CYCLE_TIME
+MAX_CYCLE_TIME  = cfg.GREEN_MAX_CYCLE_TIME
 
 # ─── Normalisation ceilings ────────────────────────────────────
-MAX_QUEUE_M = 80.0      # metres — cap for Qn normalisation
-MAX_WAIT    = 90        # seconds — cap for Wn (prevents runaway pressure)
+MAX_QUEUE_M = cfg.TRAFFIC_MAX_QUEUE_M
+MAX_WAIT    = cfg.GREEN_MAX_WAIT_SECONDS
 
 # ─── Pressure EMA (smooths ML noise across calls) ─────────────
-ALPHA_EMA = 0.7         # weight for new sample; (1-α) for previous
+ALPHA_EMA     = cfg.GREEN_EMA_ALPHA
 _pressure_ema = {}      # {edge_id: smoothed_P}
 
 # ─── Pressure weights:  P = w1*Qn + w2*D + w3*Wn ──────────────
-W_P_QUEUE   = 0.50
-W_P_DENSITY = 0.30
-W_P_WAIT    = 0.20
+W_P_QUEUE   = cfg.GREEN_PRESSURE_W_QUEUE
+W_P_DENSITY = cfg.GREEN_PRESSURE_W_DENSITY
+W_P_WAIT    = cfg.GREEN_PRESSURE_W_WAIT
 
 # ─── Demand weights:    D = a*Qn + b*Wn + c*P ─────────────────
-W_D_QUEUE    = 0.60
-W_D_WAIT     = 0.25
-W_D_PRESSURE = 0.15
+W_D_QUEUE    = cfg.GREEN_DEMAND_W_QUEUE
+W_D_WAIT     = cfg.GREEN_DEMAND_W_WAIT
+W_D_PRESSURE = cfg.GREEN_DEMAND_W_PRESSURE
 
-MIN_DEMAND = 0.01       # floor so every lane gets some green
+MIN_DEMAND = cfg.GREEN_MIN_DEMAND
+
+
 
 
 def _dynamic_cycle_time(n_edges: int) -> int:

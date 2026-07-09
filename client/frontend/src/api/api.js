@@ -82,6 +82,7 @@ export const edgeAPI = {
       camera_id: edgeData.camera_id || '',
       road_length_m: parseFloat(edgeData.road_length_m),
       road_width_m: parseFloat(edgeData.road_width_m),
+      num_lanes: edgeData.num_lanes != null ? parseInt(edgeData.num_lanes, 10) : 1,
       is_active: edgeData.is_active ?? true
     });
   },
@@ -95,6 +96,7 @@ export const edgeAPI = {
       camera_id: edgeData.camera_id || '',
       road_length_m: parseFloat(edgeData.road_length_m),
       road_width_m: parseFloat(edgeData.road_width_m),
+      num_lanes: edgeData.num_lanes != null ? parseInt(edgeData.num_lanes, 10) : undefined,
       is_active: edgeData.is_active ?? true
     });
   },
@@ -114,6 +116,7 @@ export const edgeAPI = {
       camera_id: edgeData.camera_id || '',
       road_length_m: edgeData.road_length_m,
       road_width_m: edgeData.road_width_m,
+      num_lanes: edgeData.num_lanes,
     });
 
     const edge2 = await edgeAPI.add({
@@ -124,6 +127,7 @@ export const edgeAPI = {
       camera_id: edgeData.camera_id || '',
       road_length_m: edgeData.road_length_m,
       road_width_m: edgeData.road_width_m,
+      num_lanes: edgeData.num_lanes,
     });
 
     return { edge1, edge2 };
@@ -164,6 +168,40 @@ export const routingAPI = {
     return apiCall('/routing/dv-update-test/', 'POST');
   },
 };
+
+// ============================================================================
+// TRAFFIC APIs
+// ============================================================================
+
+export const trafficAPI = {
+  /** Seed all edges with randomised realistic traffic (testing utility). */
+  seedAll: async () => {
+    return apiCall('/edge/update', 'POST');
+  },
+};
+
+// ============================================================================
+// DATABASE APIs
+// ============================================================================
+
+export const dbAPI = {
+  /**
+   * ⚠️ DELETE ALL DATA — nodes, edges, routing entries.
+   * Guarded by window.confirm() in the UI; no server-side auth yet.
+   */
+  clearAll: async () => {
+    return apiCall('/db/clear-all/', 'POST');
+  },
+
+  /**
+   * Delete only routing table entries, leaving nodes and edges intact.
+   * Use this to flush stale DV costs after a routing algorithm fix.
+   */
+  clearRouting: async () => {
+    return apiCall('/db/clear-routing/', 'POST');
+  },
+};
+
 
 // ============================================================================
 // SIGNAL APIs

@@ -2,13 +2,14 @@ import os
 import time
 from datetime import datetime
 from ..db.models import Edge, RoutingEntry
+from backend.algo_config import cfg
 
 
-ALPHA         = 0.2   # EMA weight for cost updates (0 = never update, 1 = no smoothing)
-MAX_INFLATION = 1.5   # Reject route updates that inflate cost beyond this ratio
+ALPHA         = cfg.DV_EMA_ALPHA
+MAX_INFLATION = cfg.DV_MAX_INFLATION
 
-MAX_QUEUE_M = 80.0
-MAX_DENSITY = 1.0
+MAX_QUEUE_M = cfg.TRAFFIC_MAX_QUEUE_M
+MAX_DENSITY = cfg.TRAFFIC_MAX_DENSITY
 
 
 def compute_traffic_cost(edge: Edge) -> float:
@@ -45,17 +46,57 @@ def compute_traffic_cost(edge: Edge) -> float:
     return free_flow_time * congestion_mult + edge.turn_penalty_s
 
 
-def run_routing_dv_iteration() -> int:
+def _update_cost(entry, new_cost: float) -> bool:
+    """
+    Update entry.cost using an asymmetric rule and return True if the cost
+    changed meaningfully (beyond CONVERGE_EPSILON).
+
+    Asymmetric update rule — standard Bellman-Ford for improvements + EMA for
+    increases:
+
+    - If new_cost < stored cost (IMPROVEMENT): always accept immediately.
+    - If new_cost > stored cost (INCREASE): apply EMA + inflation guard.
+    """
+    # Read live from cfg so .env changes take effect on server restart
+    alpha         = cfg.DV_EMA_ALPHA
+    max_inflation = cfg.DV_MAX_INFLATION
+    epsilon       = cfg.DV_CONVERGE_EPSILON
+
+    old = entry.cost
+
+    if new_cost < old:
+        # Improvement: always blend toward the lower value (fast recovery from stale data)
+        entry.cost = (1 - alpha) * old + alpha * new_cost
+    else:
+        # Increase: reject if it would inflate cost beyond the guard ratio
+        if new_cost > old * max_inflation:
+            return False
+        entry.cost = (1 - alpha) * old + alpha * new_cost
+
+    # Only report as a "real" change if cost shifted by more than EPSILON
+    relative_shift = abs(entry.cost - old) / max(old, 1e-9)
+    return relative_shift > epsilon
+
+
+def run_routing_dv_iteration(verbose: bool = True) -> int:
     """
     Single iteration of distance-vector update.
     Call repeatedly until return value is 0 (converged).
+
+    `verbose=False` is used by the automatic background loop (apps.py) so it
+    doesn't flood the console every cycle; the manual /api/routing/dv-update-test/
+    endpoint still calls this with the default verbose=True for debugging.
     """
-    print("\n" + "=" * 80)
-    print("  DV UPDATE RUNNING (traffic-only routing)...")
-    print("=" * 80)
+    def log(*args, **kwargs):
+        if verbose:
+            print(*args, **kwargs)
+
+    log("\n" + "=" * 80)
+    log("  DV UPDATE RUNNING (traffic-only routing)...")
+    log("=" * 80)
 
     edges = Edge.objects(is_active=True)
-    print(f"Total active edges: {edges.count()}")
+    log(f"Total active edges: {edges.count()}")
 
     # Collect all nodes
     all_nodes = set()
@@ -63,12 +104,12 @@ def run_routing_dv_iteration() -> int:
         all_nodes.add(edge.in_node_id)
         all_nodes.add(edge.out_node_id)
 
-    print(f"Total nodes: {len(all_nodes)} - {sorted(all_nodes)}")
+    log(f"Total nodes: {len(all_nodes)} - {sorted(all_nodes)}")
 
     # ----------------------------
     # PHASE 0: Self-routes (zero-cost, added once)
     # ----------------------------
-    print("\n[PHASE 0] Adding self-routes...")
+    log("\n[PHASE 0] Adding self-routes...")
     self_routes_added = 0
     for node in all_nodes:
         exists = RoutingEntry.objects(
@@ -86,12 +127,12 @@ def run_routing_dv_iteration() -> int:
             ).save()
             self_routes_added += 1
 
-    print(f"  + Self-routes added: {self_routes_added}")
+    log(f"  + Self-routes added: {self_routes_added}")
 
     # ----------------------------
     # PHASE 1: Bootstrap direct-edge routes
     # ----------------------------
-    print("\n[PHASE 1] Bootstrapping routes from edges...")
+    log("\n[PHASE 1] Bootstrapping routes from edges...")
     bootstrap_created = 0
     bootstrap_updated = 0
 
@@ -107,10 +148,11 @@ def run_routing_dv_iteration() -> int:
         ).first()
 
         if entry:
-            entry.cost         = (1 - ALPHA) * entry.cost + ALPHA * cost_AB
+            changed = _update_cost(entry, cost_AB)
             entry.last_updated = datetime.now()
             entry.save()
-            bootstrap_updated += 1
+            if changed:
+                bootstrap_updated += 1
         else:
             RoutingEntry(
                 from_node_id=A,
@@ -120,12 +162,12 @@ def run_routing_dv_iteration() -> int:
             ).save()
             bootstrap_created += 1
 
-    print(f"  + Routes created: {bootstrap_created}, updated: {bootstrap_updated}")
+    log(f"  + Routes created: {bootstrap_created}, updated: {bootstrap_updated}")
 
     # ----------------------------
     # PHASE 2: DV propagation (single iteration)
     # ----------------------------
-    print("\n[PHASE 2] DV propagation...")
+    log("\n[PHASE 2] DV propagation...")
 
     changes   = 0
     processed = set()  # guard against processing the same (A, D, B) triple twice
@@ -157,17 +199,16 @@ def run_routing_dv_iteration() -> int:
             ).first()
 
             if entry:
-                # Reject runaway cost inflation
-                if new_cost > entry.cost * MAX_INFLATION:
-                    continue
-
-                entry.cost         = (1 - ALPHA) * entry.cost + ALPHA * new_cost
-                entry.last_updated = datetime.now()
-                entry.save()
-                changes += 1
+                changed = _update_cost(entry, new_cost)
+                if changed:
+                    entry.last_updated = datetime.now()
+                    entry.save()
+                    changes += 1
 
             else:
-                # Only create if competitive against the current best path
+                # Only create if competitive against the current best path.
+                # Compare against the best-known path's cost (not MAX_INFLATION
+                # relative to itself, since that best may also be stale/inflated).
                 best_existing = RoutingEntry.objects(
                     from_node_id=A,
                     destination_node_id=D
@@ -186,18 +227,18 @@ def run_routing_dv_iteration() -> int:
 
     # Summary
     total = RoutingEntry.objects().count()
-    print(f"  + Routes changed this iteration: {changes}")
-    print(f"  + Total routing entries in DB:   {total}")
+    log(f"  + Routes changed this iteration: {changes}")
+    log(f"  + Total routing entries in DB:   {total}")
 
-    print("\n[SUMMARY] Routing tables by node:")
+    log("\n[SUMMARY] Routing tables by node:")
     for node in sorted(all_nodes):
         routes = RoutingEntry.objects(from_node_id=node)
         dests  = set(r.destination_node_id for r in routes)
-        print(f"  {node}: {len(dests)} destinations")
+        log(f"  {node}: {len(dests)} destinations")
         for dest in sorted(dests):
             dest_routes = RoutingEntry.objects(from_node_id=node, destination_node_id=dest)
             best_cost   = min(r.cost for r in dest_routes)
-            print(f"    -> {dest}: {dest_routes.count()} paths, best cost: {best_cost:.4f}s")
+            log(f"    -> {dest}: {dest_routes.count()} paths, best cost: {best_cost:.4f}s")
 
-    print("=" * 80 + "\n")
+    log("=" * 80 + "\n")
     return changes  # 0 = converged

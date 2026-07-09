@@ -1,9 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import MapView from './components/MapView';
 import AddPage from './pages/AddPage';
-import Page2 from './pages/Page2';
 import Page3 from './pages/Page3';
 import Page4 from './pages/Page4';
 import RoutingVisualizer from './features/RoutingVisualizer';
@@ -32,15 +31,47 @@ export default function App() {
   // 🛣️ ROUTING VISUALIZER STATE
   const [showRoutingModal, setShowRoutingModal] = useState(false);
   const [routingVisualizationData, setRoutingVisualizationData] = useState(null);
-  const routingNodeClickHandlerRef = useRef(null);
+  // NOTE: this used to be `useRef(null)`. Mutating a ref's `.current` does
+  // NOT trigger a re-render, so MapView kept receiving a stale (null)
+  // handler prop right after the modal opened — the very first node click
+  // was silently swallowed because MapView's click-priority chain saw a
+  // falsy `routingNodeClickHandler`. Using state means registering the
+  // handler actually re-renders App and MapView gets the live handler.
+  const [routingNodeClickHandler, setRoutingNodeClickHandler] = useState(null);
 
   // ✅ NEW: SIGNAL SCHEDULE VISUALIZER STATE
   const [showSignalModal, setShowSignalModal] = useState(false);
   const [signalVisualizationData, setSignalVisualizationData] = useState(null);
-  const signalNodeClickHandlerRef = useRef(null);
+  const [signalNodeClickHandler, setSignalNodeClickHandler] = useState(null);
 
-  // 🚦 GLOBAL SIGNAL STATE (FOR MAP - from Page2)
-  const [signalStates, setSignalStates] = useState({});
+  // Stable callbacks (useCallback) so RoutingVisualizer/SignalScheduleVisualizer's
+  // registration effects don't re-fire on every unrelated App re-render.
+  const handleRoutingModalClose = useCallback(() => {
+    console.log('[App] Closing routing modal');
+    setShowRoutingModal(false);
+    setRoutingVisualizationData(null);
+    setRoutingNodeClickHandler(null);
+  }, []);
+
+  const handleRoutingNodeClickHandler = useCallback((handler) => {
+    console.log('[App] Routing handler registered:', !!handler);
+    // Wrap in an arrow function: setState treats a bare function argument
+    // as a functional updater, so passing the handler directly would make
+    // React call it instead of storing it.
+    setRoutingNodeClickHandler(() => handler);
+  }, []);
+
+  const handleSignalModalClose = useCallback(() => {
+    console.log('[App] Closing signal modal');
+    setShowSignalModal(false);
+    setSignalVisualizationData(null);
+    setSignalNodeClickHandler(null);
+  }, []);
+
+  const handleSignalNodeClickHandler = useCallback((handler) => {
+    console.log('[App] Signal handler registered:', !!handler);
+    setSignalNodeClickHandler(() => handler);
+  }, []);
 
   const resetAllStates = () => {
     setMapClickEnabled(false);
@@ -105,12 +136,13 @@ export default function App() {
           onNodesUpdate={setAllNodes}
           onEdgesUpdate={setAllEdges}
 
-          signalStates={signalStates}
+          // signalStates: Page2 removed — global overlay disabled; SignalScheduleVisualizer handles per-node signal view
+          signalStates={{}}
           routingVisualizationData={routingVisualizationData}
-          routingNodeClickHandler={routingNodeClickHandlerRef.current}
+          routingNodeClickHandler={routingNodeClickHandler}
           
           // ✅ NEW: Signal visualization props
-          signalNodeClickHandler={signalNodeClickHandlerRef.current}
+          signalNodeClickHandler={signalNodeClickHandler}
           signalVisualizationData={signalVisualizationData}
         />
 
@@ -119,16 +151,8 @@ export default function App() {
           nodes={allNodes}
           edges={allEdges}
           showModal={showRoutingModal}
-          onModalClose={() => {
-            console.log('[App] Closing routing modal');
-            setShowRoutingModal(false);
-            setRoutingVisualizationData(null);
-            routingNodeClickHandlerRef.current = null;
-          }}
-          onNodeClickHandler={(handler) => {
-            console.log('[App] Routing handler registered:', !!handler);
-            routingNodeClickHandlerRef.current = handler;
-          }}
+          onModalClose={handleRoutingModalClose}
+          onNodeClickHandler={handleRoutingNodeClickHandler}
           onVisualizationUpdate={setRoutingVisualizationData}
         />
 
@@ -137,24 +161,12 @@ export default function App() {
           nodes={allNodes}
           edges={allEdges}
           showModal={showSignalModal}
-          onModalClose={() => {
-            console.log('[App] Closing signal modal');
-            setShowSignalModal(false);
-            setSignalVisualizationData(null);
-            signalNodeClickHandlerRef.current = null;
-          }}
-          onNodeClickHandler={(handler) => {
-            console.log('[App] Signal handler registered:', !!handler);
-            signalNodeClickHandlerRef.current = handler;
-          }}
+          onModalClose={handleSignalModalClose}
+          onNodeClickHandler={handleSignalNodeClickHandler}
           onSignalVisualizationUpdate={setSignalVisualizationData}
         />
 
         <Routes>
-          <Route
-            path="/page2"
-            element={<Page2 onSignalUpdate={setSignalStates} />}
-          />
           <Route 
             path="/add" 
             element={

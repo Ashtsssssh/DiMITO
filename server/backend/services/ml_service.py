@@ -2,6 +2,7 @@ import tempfile
 import os
 from ml.test_model import analyze_traffic_image
 from ml.roi_finder import select_road_roi
+from backend.algo_config import cfg
 
 
 # --- Post-processing constants ---
@@ -10,8 +11,9 @@ VEHICLE_LENGTHS = {
     'bike':  2.0,
     'truck': 10.0,
 }
-AVG_VEHICLE_LENGTH_M = 4.5     # fallback (used when per-class isn't ready)
-AVG_LANE_WIDTH_M = 3.5         # standard lane width for n_lanes calc
+AVG_VEHICLE_LENGTH_M = cfg.ML_AVG_VEHICLE_LENGTH_M   # fallback when per-class isn't ready
+AVG_LANE_WIDTH_M     = cfg.ML_AVG_LANE_WIDTH_M        # standard lane width for n_lanes calc
+
 
 
 # ─── ROI lookup ────────────────────────────────────────────────

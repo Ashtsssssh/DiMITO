@@ -6,8 +6,9 @@ from rest_framework import status
 from django.views.decorators.csrf import csrf_exempt
 
 import time
+import os
 
-from backend.db.models import Node, Edge
+from backend.db.models import Node, Edge, RoutingEntry
 
 from backend.services import (
     data_service,
@@ -154,13 +155,15 @@ def create_edge(request):
         camera_id=data["camera_id"],
         road_length_m=float(data["road_length_m"]),
         road_width_m=float(data["road_width_m"]),
+        num_lanes=int(data.get("num_lanes", 1)),
         is_active=data.get("is_active", True)
     )
 
     return Response({
         "edge_id": edge.edge_id,
         "in": edge.in_node_id,
-        "out": edge.out_node_id
+        "out": edge.out_node_id,
+        "num_lanes": edge.num_lanes
     })
 
 @api_view(["POST"])
@@ -195,14 +198,24 @@ def update_edge(request):
             status=400
         )
 
+    # IMPORTANT: only coerce to float/int when the key is actually present.
+    # `data.get("road_length_m", 0)` used to return 0 (not None) for omitted
+    # fields, which data_service.update_edge then treated as "please set
+    # this to zero" instead of "leave it alone" — silently destroying the
+    # stored value on any partial edit that didn't include every field.
+    road_length_m = data.get("road_length_m")
+    road_width_m = data.get("road_width_m")
+    num_lanes = data.get("num_lanes")
+
     edge = data_service.update_edge(
         edge_id=data["edge_id"],
         name=data.get("name"),
         in_node_id=data.get("in_node_id"),
         out_node_id=data.get("out_node_id"),
         camera_id=data.get("camera_id"),
-        road_length_m=float(data.get("road_length_m", 0)),
-        road_width_m=float(data.get("road_width_m", 0)),
+        road_length_m=float(road_length_m) if road_length_m is not None else None,
+        road_width_m=float(road_width_m) if road_width_m is not None else None,
+        num_lanes=int(num_lanes) if num_lanes is not None else None,
         is_active=data.get("is_active")
     )
 
@@ -220,6 +233,7 @@ def update_edge(request):
         "camera_id": edge.camera_id,
         "road_length_m": edge.road_length_m,
         "road_width_m": edge.road_width_m,
+        "num_lanes": edge.num_lanes,
         "is_active": edge.is_active
     })
 
@@ -236,6 +250,7 @@ def list_edges(request):
             "camera_id": e.camera_id,
             "road_length_m": e.road_length_m,
             "road_width_m": e.road_width_m,
+            "num_lanes": e.num_lanes,
             "is_active": e.is_active
         }
         for e in edges
@@ -338,6 +353,9 @@ def process_green_signal(request, node_id, edge_id):
         "node": node_id,
         "edge_id": edge_id,
         "green_time": green_times[edge_id],
+        # Full schedule returned so the simulator can sync ALL edges in one
+        # round-trip instead of leaving non-target edges at stale defaults.
+        "green_times": green_times,
         "ml_results": ml_results
     })
 
@@ -449,18 +467,73 @@ def get_routing_table(request, node_id):
 
 
 
-# TEST ONLY 
+# TEST ONLY
 @api_view(["POST"])
 def trigger_dv_iteration(request):
-    """TESTING ONLY. Triggers one DV update iteration."""
-    updates = run_routing_dv_iteration()
+    """
+    Triggers DV relaxation iterations until full convergence (or max 50 passes).
+
+    A single Bellman-Ford pass only propagates routes one hop at a time.
+    For a network with N hops between nodes, N-1 passes are required to
+    fully converge. This endpoint loops until run_routing_dv_iteration()
+    returns 0 (no entries changed), guaranteeing all multi-hop routes are
+    populated in a single button click from the frontend.
+    """
+    MAX_ITERATIONS = 50
+    total_updates = 0
+    iterations_run = 0
+    converged = False
+
+    for i in range(MAX_ITERATIONS):
+        iterations_run += 1
+        updates = run_routing_dv_iteration(verbose=(i == 0))  # only verbose on first pass
+        total_updates += updates
+        if updates == 0:
+            converged = True
+            break
 
     return Response({
         "status": "ok",
-        "updates_applied": updates,
+        "converged": converged,
+        "iterations_run": iterations_run,
+        "total_updates_applied": total_updates,
+        "message": (
+            f"Converged after {iterations_run} iteration(s)."
+            if converged
+            else f"Did not fully converge after {MAX_ITERATIONS} iterations ({total_updates} total updates). "
+                 "Check for routing loops or disconnected graph components."
+        ),
     })
 
 
+
+
+@csrf_exempt
+@api_view(["POST"])
+def clear_routing_table(request):
+    """
+    DELETE all RoutingEntry documents, leaving nodes and edges untouched.
+
+    Use this to flush stale DV-computed costs (e.g. after fixing routing
+    algorithm bugs) without destroying the network topology. After clearing,
+    re-trigger DV computation from the admin panel to rebuild fresh routes.
+
+    POST /api/db/clear-routing/
+    """
+    try:
+        count = RoutingEntry.objects().count()
+        RoutingEntry.objects().delete()
+        print(f"[clear_routing_table] Deleted {count} routing entries.")
+        return Response({
+            "status": "success",
+            "message": f"Routing table cleared — {count} entries deleted.",
+            "deleted": count,
+        })
+    except Exception as e:
+        return Response({
+            "status": "error",
+            "message": str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # UPDATE ALL TRAFFIC (Testing Utility)
@@ -492,9 +565,21 @@ def clear_database(request):
     """
     DELETE ALL DATA from the database (nodes, edges, routing entries).
     WARNING: This action cannot be undone!
-    
+
+    Optional env-var guard: set CLEAR_API_KEY in the environment to require
+    callers to supply a matching `X-Clear-API-Key` header. If the env var is
+    not set, the endpoint is unguarded (existing dev behaviour preserved).
+
     POST /api/db/clear-all/
     """
+    required_key = os.environ.get("CLEAR_API_KEY")
+    if required_key:
+        supplied_key = request.headers.get("X-Clear-API-Key", "")
+        if supplied_key != required_key:
+            return Response(
+                {"error": "Forbidden — invalid or missing X-Clear-API-Key header"},
+                status=status.HTTP_403_FORBIDDEN
+            )
     try:
         result = clear_all_data()
         

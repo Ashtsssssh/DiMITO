@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import Dropdown from '@/components/ui/Dropdown';
+import DropDown from '@/components/ui/DropDown';
 import FormRenderer from '@/components/ui/FormRenderer';
-import { nodeAPI, edgeAPI, cameraAPI, routingAPI, calculateDistance } from '@/api/api';
+import { nodeAPI, edgeAPI, cameraAPI, routingAPI, trafficAPI, dbAPI, calculateDistance } from '@/api/api';
 
 export default function AddPage({ 
   onMapClick, 
@@ -23,6 +23,9 @@ export default function AddPage({
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [trafficMsg, setTrafficMsg] = useState(null);
+  // Stores the resolved edge for edit/delete flows so FormRenderer can
+  // prefill fields (e.g. `lanes`) from the existing DB record.
+  const [activeEdge, setActiveEdge] = useState(null);
 
   useEffect(() => {
     fetchNodes();
@@ -108,7 +111,8 @@ export default function AddPage({
           node2.location.lat, node2.location.lng
         );
 
-        const roadWidth = parseFloat(data.lanes) * 3.5;
+        const lanes = parseInt(data.lanes, 10);
+        const roadWidth = lanes * 3.5;
 
         result = await edgeAPI.addBidirectional(
           node1.node_id,
@@ -118,6 +122,7 @@ export default function AddPage({
             camera_id: data.camera_id || '',
             road_length_m: distance,
             road_width_m: roadWidth,
+            num_lanes: lanes,
           }
         );
 
@@ -129,10 +134,15 @@ export default function AddPage({
         const node2 = selectedEdgeNodes[1];
         const edge = findEdgeBetweenNodes(node1, node2);
         if (!edge) throw new Error('No edge exists between selected nodes');
-        
-        // Calculate road width from lanes
-        const roadWidth = parseFloat(data.lanes) * 3.5;
-        
+
+        // Guard: if the user left `lanes` blank, fall back to the DB value
+        // so we never silently zero out num_lanes on a partial edit.
+        const rawLanes = data.lanes !== '' && data.lanes != null
+          ? parseInt(data.lanes, 10)
+          : edge.num_lanes;  // preserve existing value
+        const lanes = isNaN(rawLanes) || rawLanes < 1 ? edge.num_lanes : rawLanes;
+        const roadWidth = lanes * 3.5;
+
         result = await edgeAPI.edit({
           edge_id: edge.edge_id,
           name: data.name,
@@ -141,6 +151,7 @@ export default function AddPage({
           camera_id: data.camera_id || edge.camera_id,
           road_length_m: edge.road_length_m,
           road_width_m: roadWidth,
+          num_lanes: lanes,
           is_active: data.is_active === 'true',
         });
       }
@@ -175,19 +186,20 @@ export default function AddPage({
       }
 
       console.log('Success:', result);
-      
+
       const action = activeForm.apiType.split('/')[1];
       alert(`Successfully ${action === 'add' ? 'created' : action === 'edit' ? 'updated' : 'deleted'}!`);
-      
+
       setActiveForm(null);
+      setActiveEdge(null);
       clearCoordinates();
       clearEdgeNodes?.();
       onSelectEdgeMode?.(false);
-      
+
       if (onNodesUpdate) {
         onNodesUpdate();
       }
-      
+
       fetchNodes();
       fetchEdges();
     } catch (err) {
@@ -201,6 +213,7 @@ export default function AddPage({
 
   const handleFormCancel = () => {
     setActiveForm(null);
+    setActiveEdge(null);
     setError(null);
     clearCoordinates();
     clearEdgeNodes?.();
@@ -210,38 +223,17 @@ export default function AddPage({
   const handleGenerateTraffic = async () => {
     setLoading(true);
     setTrafficMsg(null);
-    
+
     try {
-      const res = await fetch("http://localhost:8000/api/edge/update", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        }
-      });
-      
-      const data = await res.json();
-      
-      if (res.ok) {
-        setTrafficMsg({
-          type: 'success',
-          text: `✅ Updated ${data.updated || 0} edges with realistic traffic data`
-        });
-        // Refresh edges after updating traffic
-        setTimeout(() => {
-          fetchEdges();
-        }, 500);
-      } else {
-        setTrafficMsg({
-          type: 'error',
-          text: `❌ Error: ${data.message || 'Failed to generate traffic'}`
-        });
-      }
-    } catch (err) {
-      console.error("Traffic generation failed", err);
+      const data = await trafficAPI.seedAll();
       setTrafficMsg({
-        type: 'error',
-        text: `❌ Failed: ${err.message}`
+        type: 'success',
+        text: `✅ Updated ${data.updated || 0} edges with realistic traffic data`
       });
+      setTimeout(() => fetchEdges(), 500);
+    } catch (err) {
+      console.error('Traffic generation failed', err);
+      setTrafficMsg({ type: 'error', text: `❌ Failed: ${err.message}` });
     } finally {
       setLoading(false);
       setTimeout(() => setTrafficMsg(null), 4000);
@@ -251,74 +243,81 @@ export default function AddPage({
   const handleDVUpdate = async () => {
     setLoading(true);
     setTrafficMsg(null);
-    
+
     try {
       const data = await routingAPI.triggerDVUpdate();
+      // The backend now runs until convergence and returns rich metadata.
+      // Previously returned `updates_applied`; now returns `total_updates_applied`,
+      // `converged`, `iterations_run`, and a human-readable `message`.
+      const converged = data.converged;
+      const iters = data.iterations_run ?? 1;
+      const updates = data.total_updates_applied ?? data.updates_applied ?? 0;
       setTrafficMsg({
-        type: 'success',
-        text: `✅ Routing computed! ${data.updates_applied || 0} routing entries updated`
+        type: converged ? 'success' : 'error',
+        text: converged
+          ? `✅ Routing converged in ${iters} pass${iters !== 1 ? 'es' : ''} — ${updates} entries updated`
+          : `⚠️ Routing ran ${iters} passes but did not fully converge (${updates} updates). Check for disconnected nodes.`
       });
-      // Routing is now available for nodes
-      setTimeout(() => {
-        fetchEdges();
-      }, 500);
     } catch (err) {
-      console.error("DV update failed", err);
+      console.error('DV update failed', err);
       setTrafficMsg({
         type: 'error',
         text: `❌ Failed: ${err.message}`
       });
     } finally {
       setLoading(false);
-      setTimeout(() => setTrafficMsg(null), 4000);
+      setTimeout(() => setTrafficMsg(null), 6000);
     }
   };
 
   const handleClearDatabase = async () => {
-    // Ask for confirmation before clearing
     if (!window.confirm('⚠️ WARNING: This will DELETE ALL data (nodes, edges, routing).\n\nThis action CANNOT be undone. Are you sure?')) {
       return;
     }
 
     setLoading(true);
     setTrafficMsg(null);
-    
+
     try {
-      const res = await fetch("http://localhost:8000/api/db/clear-all/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        }
-      });
-      
-      const data = await res.json();
-      
-      if (res.ok) {
-        setTrafficMsg({
-          type: 'success',
-          text: `✅ Database cleared! Deleted ${data.deleted.nodes} nodes, ${data.deleted.edges} edges`
-        });
-        // Refresh data after clearing
-        setTimeout(() => {
-          fetchNodes();
-          fetchEdges();
-          onNodesUpdate?.([]);
-        }, 500);
-      } else {
-        setTrafficMsg({
-          type: 'error',
-          text: `❌ Error: ${data.message || 'Failed to clear database'}`
-        });
-      }
-    } catch (err) {
-      console.error("Database clear failed", err);
+      const data = await dbAPI.clearAll();
       setTrafficMsg({
-        type: 'error',
-        text: `❌ Failed: ${err.message}`
+        type: 'success',
+        text: `✅ Database cleared! Deleted ${data.deleted?.nodes ?? 0} nodes, ${data.deleted?.edges ?? 0} edges`
       });
+      setTimeout(() => {
+        fetchNodes();
+        fetchEdges();
+        onNodesUpdate?.([]);
+      }, 500);
+    } catch (err) {
+      console.error('Database clear failed', err);
+      setTrafficMsg({ type: 'error', text: `❌ Failed: ${err.message}` });
     } finally {
       setLoading(false);
       setTimeout(() => setTrafficMsg(null), 5000);
+    }
+  };
+
+  const handleClearRoutingTable = async () => {
+    if (!window.confirm('Reset the DV routing table?\n\nThis deletes all computed routing entries. Nodes and edges are kept.\nYou will need to re-run "Compute Routing (DV)" afterwards.')) {
+      return;
+    }
+
+    setLoading(true);
+    setTrafficMsg(null);
+
+    try {
+      const data = await dbAPI.clearRouting();
+      setTrafficMsg({
+        type: 'success',
+        text: `✅ Routing table cleared — ${data.deleted ?? 0} entries deleted. Run "Compute Routing (DV)" to rebuild.`
+      });
+    } catch (err) {
+      console.error('Routing table clear failed', err);
+      setTrafficMsg({ type: 'error', text: `❌ Failed: ${err.message}` });
+    } finally {
+      setLoading(false);
+      setTimeout(() => setTrafficMsg(null), 6000);
     }
   };
 
@@ -515,6 +514,13 @@ export default function AddPage({
       color: "from-red-600 to-pink-600",
       items: [
         {
+          label: "Clear Routing Table",
+          description: "Reset DV entries — keeps nodes & edges",
+          isSpecial: true,
+          action: 'clearRouting',
+          dangerous: true
+        },
+        {
           label: "Clear All Data",
           description: "Delete all nodes, edges, and routing data",
           isSpecial: true,
@@ -537,15 +543,21 @@ export default function AddPage({
       return;
     }
     
+    if (item.isSpecial && item.action === 'clearRouting') {
+      handleClearRoutingTable();
+      return;
+    }
+
     if (item.isSpecial && item.action === 'clearDatabase') {
       handleClearDatabase();
       return;
     }
 
     const formConfig = { ...item.formConfig };
-    
+
     setActiveForm(formConfig);
-    
+    setActiveEdge(null);  // Clear any previously resolved edge
+
     if (formConfig.requiresMapClick && !formConfig.requiresNodeSelect) {
       console.log('[AddPage] Enabling map click mode for node addition');
       onMapClick();  // Enable map clicking
@@ -672,12 +684,20 @@ export default function AddPage({
               selectedNode={selectedNode}
               selectedEdgeNodes={selectedEdgeNodes}
               selectedEdge={selectedEdge}
+              // Pass the resolved DB edge so FormRenderer can prefill
+              // `lanes` (and other fields) from actual stored values,
+              // preventing silent num_lanes corruption on partial edits.
+              resolvedEdge={
+                activeForm?.apiType === 'edge/edit' && selectedEdgeNodes?.length === 2
+                  ? findEdgeBetweenNodes(selectedEdgeNodes[0], selectedEdgeNodes[1])
+                  : null
+              }
             />
           </>
         ) : (
           <div className="space-y-3">
             {dropdownConfigs.map((config, idx) => (
-              <Dropdown
+              <DropDown
                 key={idx}
                 title={config.title}
                 icon={config.icon}

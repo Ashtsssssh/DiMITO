@@ -37,25 +37,11 @@ export default function SignalScheduleVisualizer({
 
       console.log('[Signal] fetched:', data);
 
-      setSignalState(prev => {
-        // If same edge and current timer still running, keep the existing timer
-        if (prev && prev.current_green === data.current_green && remainingTime > 0) {
-          return { ...prev, phases: data.phases };
-        }
-        // Edge changed or first fetch — accept new data
-        return data;
-      });
-
-      // Only reset remainingTime if edge changed
-      setRemainingTime(prevRem => {
-        // No previous state => use new data
-        if (!signalState) return data.remaining_time;
-        // Edge changed => use new remaining
-        if (signalState.current_green !== data.current_green) return data.remaining_time;
-        // Same edge, timer still running => keep existing
-        if (prevRem > 0) return prevRem;
-        return data.remaining_time;
-      });
+      // Always replace state on fetch — the countdown timer resets via
+      // the useEffect dependency on signalState. Merging stale prev here
+      // caused the timer to use wrong remaining_time after phase transitions.
+      setSignalState(data);
+      setRemainingTime(data.remaining_time);
 
       onSignalVisualizationUpdate?.({
         nodeId,
@@ -72,31 +58,37 @@ export default function SignalScheduleVisualizer({
     } finally {
       fetchingRef.current = false;
     }
-  }, [onSignalVisualizationUpdate, signalState, remainingTime]);
+  }, [onSignalVisualizationUpdate]);
 
   // =============================================================================
   // NODE CLICK HANDLER
   // =============================================================================
-  const handleNodeClick = useRef((node) => {
+  // Defined as a plain callback (not useRef) so it always sees the current
+  // fetchSignalState. The old useRef approach froze the initial closure,
+  // meaning onSignalVisualizationUpdate updates were silently dropped.
+  const handleNodeClick = useCallback((node) => {
     console.log('[SignalScheduleVisualizer] Node clicked:', node?.node_id);
-    
     if (!node) return;
-    
     setSelectedNode(node);
     fetchSignalState(node.node_id);
-  }).current;
+  }, [fetchSignalState]);
 
   // =============================================================================
   // REGISTER CLICK HANDLER
   // =============================================================================
   useEffect(() => {
-    if (showModal && onNodeClickHandler) {
+    if (!showModal) return;
+
+    if (onNodeClickHandler) {
       console.log('[SignalScheduleVisualizer] Registering click handler');
       onNodeClickHandler(handleNodeClick);
     }
 
+    // See RoutingVisualizer.jsx for why this must unregister unconditionally
+    // rather than checking `!showModal` here (that check used a stale
+    // closure value and never actually fired).
     return () => {
-      if (!showModal && onNodeClickHandler) {
+      if (onNodeClickHandler) {
         console.log('[SignalScheduleVisualizer] Unregistering click handler');
         onNodeClickHandler(null);
       }
@@ -264,7 +256,9 @@ export default function SignalScheduleVisualizer({
                   </div>
                 </div>
 
-                {/* Progress Bar */}
+                {/* Progress Bar — width is remaining/full_duration for the active phase.
+                     Using remaining_time (snapshot) as divisor risks NaN when a phase
+                     arrives already-expired; use the phase's full green duration instead. */}
                 <div className="mt-4 bg-zinc-800 rounded-full h-3 overflow-hidden">
                   <div
                     className={`h-full transition-all duration-1000 ${
@@ -273,7 +267,12 @@ export default function SignalScheduleVisualizer({
                         : 'bg-gradient-to-r from-green-500 to-emerald-500'
                     }`}
                     style={{
-                      width: `${(remainingTime / signalState.remaining_time) * 100}%`
+                      width: (() => {
+                        const phase = signalState.phases.find(p => p.edge === signalState.current_green);
+                        const fullDuration = phase?.green ?? signalState.remaining_time;
+                        if (!fullDuration) return '0%';
+                        return `${Math.min(100, (remainingTime / fullDuration) * 100)}%`;
+                      })()
                     }}
                   />
                 </div>

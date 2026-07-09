@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import Map, { NavigationControl, Marker, Source, Layer } from "react-map-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
+import { nodeAPI, edgeAPI } from '@/api/api';
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -73,28 +74,26 @@ export default function MapView({
     try {
       setLoading(true);
       console.log('[MapView] Fetching nodes...');
-      const res = await fetch('http://localhost:8000/api/node/get_all');
-      console.log('[MapView] Nodes response:', res.status);
-      if (res.ok) {
-        const data = await res.json();
-        console.log('[MapView] Nodes data:', data);
-        setNodes(data);
-        onNodesUpdate?.(data);
-      }
+      const data = await nodeAPI.getAll();
+      console.log('[MapView] Nodes data:', data);
+      setNodes(data);
+      onNodesUpdate?.(data);
+    } catch (err) {
+      console.error('[MapView] Failed to fetch nodes:', err);
     } finally {
       setLoading(false);
     }
   };
 
   const fetchEdges = async () => {
-    console.log('[MapView] Fetching edges...');
-    const res = await fetch('http://localhost:8000/api/edge/get_all');
-    console.log('[MapView] Edges response:', res.status);
-    if (res.ok) {
-      const data = await res.json();
+    try {
+      console.log('[MapView] Fetching edges...');
+      const data = await edgeAPI.getAll();
       console.log('[MapView] Edges data length:', data.length);
       setEdges(data);
       onEdgesUpdate?.(data);
+    } catch (err) {
+      console.error('[MapView] Failed to fetch edges:', err);
     }
   };
 

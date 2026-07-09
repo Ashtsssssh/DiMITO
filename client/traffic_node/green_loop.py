@@ -24,9 +24,22 @@ class GreenManager:
 
     def compute_green(self, remaining_time=None, target_edge=None):
         """
-        Send all edge images to backend, get green time for the target edge.
-        Backend returns: { "edge_id": ..., "green_time": seconds }
-        If target_edge is None, uses the first edge in the schedule.
+        Send all edge images to backend, get green times for ALL edges.
+
+        Backend now returns:
+            {
+              "edge_id":    <target_edge>,
+              "green_time": <seconds for target>,
+              "green_times": { edge_id: seconds, ... },   # full schedule
+              "ml_results": [...]
+            }
+
+        We update the ENTIRE green_schedule from `green_times` so that
+        all upcoming phases run with freshly-computed durations, not the
+        stale 30s default they were initialised with.
+
+        Falls back to single-edge update if backend is an older version
+        that doesn't include the `green_times` dict.
         """
         if target_edge is None:
             target_edge = self.edge_order[0]
@@ -50,7 +63,7 @@ class GreenManager:
             r = requests.post(
                 f"{self.base_url}/green/{self.node_id}/{target_edge}/",
                 files=files,
-                timeout=3
+                timeout=30   # ML inference (YOLO) can take 5-30s per request
             )
 
             if r.status_code != 200:
@@ -69,11 +82,30 @@ class GreenManager:
                 print(f"   Full response: {data}")
                 return False
 
-            # Update only the target edge in the schedule
-            for phase in self.green_schedule:
-                if phase["edge"] == returned_edge:
-                    phase["green"] = green_time
-                    break
+            # ── Bulk-update schedule from full green_times dict ──────────────
+            # The backend now returns green times for ALL edges in the
+            # intersection. Applying them here keeps every upcoming phase in
+            # sync with the latest ML + wait-pressure computation, instead of
+            # leaving non-target edges at their stale initialisation value (30s).
+            all_green_times = data.get("green_times")  # {edge_id: seconds}
+
+            if all_green_times:
+                for phase in self.green_schedule:
+                    eid = phase["edge"]
+                    if eid in all_green_times:
+                        old = phase["green"]
+                        phase["green"] = all_green_times[eid]
+                        if old != all_green_times[eid]:
+                            print(f"   📅 Schedule updated: {eid} {old:.1f}s → {all_green_times[eid]:.1f}s")
+                print(f"   ✅ Full schedule synced ({len(all_green_times)} edges)")
+            else:
+                # Backward-compat: old backend returns only the target edge's time
+                for phase in self.green_schedule:
+                    if phase["edge"] == returned_edge:
+                        phase["green"] = green_time
+                        break
+                print(f"   ⚠️ Backend did not return green_times dict — "
+                      f"only {returned_edge} updated (upgrade backend for full sync)")
 
             now = time.time()
 
@@ -114,31 +146,17 @@ class GreenManager:
             traceback.print_exc()
             return False
 
+
     def tick(self):
         """
-        Called every 1 second. Manages:
-        1. Current signal state display (only when changes)
-        2. Recomputation before phase ends
-        3. Phase transitions with rotation
+        NOTE: This method is NOT called by node_server.green_loop().
+        node_server uses a direct sleep-based loop that calls compute_green(),
+        _transition_phase(), and _print_signal_status() directly.
+
+        Kept for reference only — do not wire in without reviewing the timing
+        logic in node_server.green_loop() first.
         """
-        if not self.green_schedule:
-            return
-
-        now = time.time()
-        remaining = self.phase_end - now
-
-        # --- PRINT STATE WHEN IT CHANGES ---
-        self._print_state_if_changed(remaining)
-
-        # --- RECOMPUTE before phase ends (at T-10 seconds) ---
-        if remaining <= RECOMPUTE_BEFORE and not self._recomputed:
-            print(f"\n⏰ Recompute triggered (T-{RECOMPUTE_BEFORE}s remaining)")
-            self.compute_green(remaining_time=remaining)
-            self._recomputed = True
-
-        # --- PHASE TRANSITION (when time reaches 0) ---
-        if remaining <= 0:
-            self._transition_phase(now)
+        pass
 
     def _print_signal_status(self, remaining):
         """Print current signal state - ONLY ONE edge should be GREEN"""
@@ -161,28 +179,6 @@ class GreenManager:
             else:
                 print(f"      🔴 {edge:3s} - RED    (waiting)")
 
-    def _print_state_if_changed(self, remaining):
-        """Print signal state only when it changes (phase transition or recompute)"""
-        if not self.green_schedule or not self._initialized:
-            return
-        
-        # Build current state string: "e1-🟢(12.5s) e2-🔴 e3-🔴"
-        state_parts = []
-        current_edge = self.green_schedule[self.current_phase]["edge"]
-        
-        for phase in self.green_schedule:
-            edge = phase["edge"]
-            if edge == current_edge:
-                state_parts.append(f"{edge}-🟢({remaining:.1f}s)")
-            else:
-                state_parts.append(f"{edge}-🔴")
-        
-        current_state = " ".join(state_parts)
-        
-        # Only print if state changed
-        if current_state != self.last_printed_state:
-            print(f"🟢 Node {self.node_id}: {current_state}")
-            self.last_printed_state = current_state
 
     def _transition_phase(self, now):
         """Handle phase transition and rotation"""

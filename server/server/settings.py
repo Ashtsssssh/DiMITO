@@ -1,8 +1,16 @@
 
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load algorithm parameters from server/.env before any service module is
+# imported. python-dotenv is already in requirements.txt.
+# override=False means real environment variables always win over .env values
+# (useful in production where vars are set by the OS / Docker / CI).
+load_dotenv(BASE_DIR / ".env", override=False)
+
 
 SECRET_KEY = 'django-insecure-=ksceim=x0avl#h@=g53%1h(b190$umain&a9weh$j_4)vr!ha'
 

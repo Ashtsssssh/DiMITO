@@ -1,6 +1,9 @@
 """
-Run all 5 node instances (a, b, c, d, e) in parallel
-Each runs with its own config from the unified config.py
+Discovers every controllable node from the backend (via config.py's
+auto-built NODES dict) and runs one simulator process per node, in parallel.
+
+No hardcoded node list anymore: add nodes/edges from the frontend, then just
+re-run this script and it picks them up automatically.
 """
 
 import subprocess
@@ -8,58 +11,83 @@ import sys
 import time
 import os
 
-def run_node_instance(node_id):
-    """Run a single node instance with specified node_id"""
-    cmd = [sys.executable, "run_node.py", node_id]
+from config import NODES
+
+
+def _unique_node_keys():
+    """
+    config.NODES is keyed by BOTH the raw node_id and the short `name`
+    (when the node has one), so the same node can appear twice under
+    different keys. Dedupe by NODE_ID before spawning — otherwise we'd
+    launch two processes trying to bind the same port.
+    """
+    seen_node_ids = set()
+    keys = []
+    for key, cfg in NODES.items():
+        if cfg["NODE_ID"] in seen_node_ids:
+            continue
+        seen_node_ids.add(cfg["NODE_ID"])
+        keys.append(key)
+    return keys
+
+
+def run_node_instance(node_key):
+    """Run a single node instance, referenced by whichever key we discovered it under."""
+    cmd = [sys.executable, "run_node.py", node_key]
     return subprocess.Popen(
         cmd,
         cwd=os.path.dirname(os.path.abspath(__file__))
     )
 
+
 def main():
-    """Start all 5 node instances"""
-    node_ids = ['a', 'b', 'c', 'd', 'e']
+    node_keys = _unique_node_keys()
+
+    if not node_keys:
+        print(
+            "❌ No controllable nodes found. Create nodes + edges from the "
+            "frontend (the /add page) first, then re-run this script."
+        )
+        sys.exit(1)
+
     processes = []
-    
-    print("🌐 Starting 5 traffic nodes...")
+
+    print(f"🌐 Starting {len(node_keys)} traffic node(s)...")
     print("=" * 50)
-    
-    for nid in node_ids:
+
+    for key in node_keys:
         try:
-            p = run_node_instance(nid)
-            processes.append((nid, p))
-            print(f"✅ Started node {nid}")
+            p = run_node_instance(key)
+            processes.append((key, p))
+            print(f"✅ Started node '{key}' (port {NODES[key]['NODE_PORT']})")
             time.sleep(0.5)  # Stagger startup
         except Exception as e:
-            print(f"❌ Failed to start node {nid}: {e}")
-    
+            print(f"❌ Failed to start node '{key}': {e}")
+
     print("=" * 50)
-    print(f"🎯 Running {len(processes)} node instances")
-    print("   - Node A on port 9001")
-    print("   - Node B on port 9002")
-    print("   - Node C on port 9003")
-    print("   - Node D on port 9004")
-    print("   - Node E on port 9005")
+    print(f"🎯 Running {len(processes)} node instance(s)")
+    for key, _ in processes:
+        print(f"   - {key} on port {NODES[key]['NODE_PORT']}")
     print("\nPress Ctrl+C to stop all")
     print("=" * 50)
-    
+
     try:
         while True:
             time.sleep(1)
-            # Check if any process died
-            for nid, p in processes:
+            for key, p in processes:
                 if p.poll() is not None:
-                    print(f"⚠️  node {nid} died with code {p.returncode}")
+                    print(f"⚠️  node '{key}' died with code {p.returncode}")
     except KeyboardInterrupt:
         print("\n\n🛑 Stopping all nodes...")
-        for nid, p in processes:
+        for key, p in processes:
             try:
                 p.terminate()
                 p.wait(timeout=2)
-                print(f"✅ Stopped node {nid}")
-            except:
+                print(f"✅ Stopped node '{key}'")
+            except Exception:
                 p.kill()
-                print(f"❌ Killed node {nid}")
+                print(f"❌ Killed node '{key}'")
+
 
 if __name__ == "__main__":
     main()

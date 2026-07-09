@@ -122,14 +122,23 @@ export default function RoutingVisualizer({
   // REGISTER CLICK HANDLER - Called once when modal opens
   // =============================================================================
   useEffect(() => {
-    if (showModal && onNodeClickHandler) {
+    if (!showModal) return;
+
+    if (onNodeClickHandler) {
       console.log('[RoutingVisualizer] Registering click handler');
       onNodeClickHandler(handleNodeClick);
     }
 
-    // Cleanup when modal closes
+    // Cleanup runs when deps change (e.g. showModal flips to false) or on
+    // unmount. NOTE: the previous version checked `!showModal` inside this
+    // closure, but cleanup closures capture the value from the render that
+    // scheduled them — at that point showModal was always `true` (we just
+    // early-returned above otherwise), so `!showModal` was always `false`
+    // and the unregister call never ran. Unregistering unconditionally here
+    // is the correct fix: this cleanup only ever exists because we
+    // registered above, so it should always undo that registration.
     return () => {
-      if (!showModal && onNodeClickHandler) {
+      if (onNodeClickHandler) {
         console.log('[RoutingVisualizer] Unregistering click handler');
         onNodeClickHandler(null);
       }

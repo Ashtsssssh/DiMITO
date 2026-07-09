@@ -9,7 +9,7 @@ export default function AddNodeForm({ open, onClose, onSuccess }) {
     longitude: "",
     cycle_time: "",
     is_active: true,
-  });
+  }); w
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -33,11 +33,14 @@ export default function AddNodeForm({ open, onClose, onSuccess }) {
         is_active: formData.is_active,
       };
 
-      // Add location if coordinates are provided
+      // Add location if coordinates are provided.
+      // MUST use {lat, lng} keys — Node model and all other callers use this
+      // convention. The old {latitude, longitude} keys were silently ignored
+      // by the backend and would store an empty location.
       if (formData.latitude && formData.longitude) {
         payload.location = {
-          latitude: parseFloat(formData.latitude),
-          longitude: parseFloat(formData.longitude),
+          lat: parseFloat(formData.latitude),
+          lng: parseFloat(formData.longitude),
         };
       }
 
@@ -46,7 +49,9 @@ export default function AddNodeForm({ open, onClose, onSuccess }) {
         payload.cycle_time = parseInt(formData.cycle_time, 10);
       }
 
-      const response = await fetch("/api/node/", {
+      // Correct URL: /api/node/add (not /api/node/ which 404s — no route registered).
+      // Uses absolute URL to match the API_BASE_URL pattern used throughout the app.
+      const response = await fetch("http://localhost:8000/api/node/add", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -60,7 +65,7 @@ export default function AddNodeForm({ open, onClose, onSuccess }) {
       }
 
       const data = await response.json();
-      
+
       // Reset form
       setFormData({
         node_id: "",
